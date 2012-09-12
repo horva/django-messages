@@ -6,6 +6,11 @@ from django.db.models.query import QuerySet
 from django.contrib.auth.models import User
 from django.utils.translation import ugettext_lazy as _
 
+if "notification" in settings.INSTALLED_APPS:
+    from notification import models as notification
+else:
+    notification = None
+
 class MessageManager(models.Manager):
 
     def inbox_for(self, user):
@@ -41,6 +46,30 @@ class MessageManager(models.Manager):
             sender_deleted_at__isnull=False,
         )
 
+    def send_messages(self, sender, recipients, subject, body, parent_msg=None):
+        message_list = []
+        for r in recipients:
+            msg = Message(
+                sender=sender,
+                recipient=r,
+                subject=subject,
+                body=body,
+            )
+            if parent_msg is not None:
+                msg.parent_msg = parent_msg
+                parent_msg.replied_at = datetime.datetime.now()
+                parent_msg.save()
+            msg.save()
+            message_list.append(msg)
+            if notification:
+                if parent_msg is not None:
+                    notification.send([sender], "messages_replied", {'message': msg})
+                    notification.send([r], "messages_reply_received", {'message': msg})
+                else:
+                    notification.send([sender], "messages_sent", {'message': msg})
+                    notification.send([r], "messages_received", {'message': msg})
+        return message_list
+
 
 class Message(models.Model):
     """
@@ -56,38 +85,38 @@ class Message(models.Model):
     replied_at = models.DateTimeField(_("replied at"), null=True, blank=True)
     sender_deleted_at = models.DateTimeField(_("Sender deleted at"), null=True, blank=True)
     recipient_deleted_at = models.DateTimeField(_("Recipient deleted at"), null=True, blank=True)
-    
+
     objects = MessageManager()
-    
+
     def new(self):
         """returns whether the recipient has read the message or not"""
         if self.read_at is not None:
             return False
         return True
-        
+
     def replied(self):
         """returns whether the recipient has written a reply to this message"""
         if self.replied_at is not None:
             return True
         return False
-    
+
     def __unicode__(self):
         return self.subject
-    
+
     def get_absolute_url(self):
         return ('messages_detail', [self.id])
     get_absolute_url = models.permalink(get_absolute_url)
-    
+
     def save(self, **kwargs):
         if not self.id:
             self.sent_at = datetime.datetime.now()
-        super(Message, self).save(**kwargs) 
-    
+        super(Message, self).save(**kwargs)
+
     class Meta:
         ordering = ['-sent_at']
         verbose_name = _("Message")
         verbose_name_plural = _("Messages")
-        
+
 def inbox_count_for(user):
     """
     returns the number of unread messages for the given user but does not
