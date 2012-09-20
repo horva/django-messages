@@ -47,7 +47,7 @@ class MessageManager(models.Manager):
         )
 
     def send_messages(self, sender, recipients, subject, body, parent_msg=None):
-        message_list = []
+        message_list_ids = []
         for r in recipients:
             msg = Message(
                 sender=sender,
@@ -60,7 +60,7 @@ class MessageManager(models.Manager):
                 parent_msg.replied_at = datetime.datetime.now()
                 parent_msg.save()
             msg.save()
-            message_list.append(msg)
+            message_list_ids.append(msg.id)
             if notification:
                 if parent_msg is not None:
                     notification.send([sender], "messages_replied", {'message': msg})
@@ -68,7 +68,7 @@ class MessageManager(models.Manager):
                 else:
                     notification.send([sender], "messages_sent", {'message': msg})
                     notification.send([r], "messages_received", {'message': msg})
-        return message_list
+        return Message.objects.filter(id__in=message_list_ids)
 
 
 class Message(models.Model):
